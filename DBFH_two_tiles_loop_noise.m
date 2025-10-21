@@ -10,7 +10,7 @@ parula_with_nan_white = [1 1 1; parula(256)];
 font_size = 16;
 
 %% Parameters
-img_res = 2^10;
+img_res = 2^11;
 seg_px  = 140;     % flat-to-flat pixels per hex TODO: why only 140 works?
 f0_m    = 120;     % focal length [m]
 fft_res = img_res;    % PSF FFT size
@@ -37,7 +37,7 @@ sigma_defocus_um = 5*50; % um
     sigma_opd_nm, sigma_tilt_nrad, sigma_defocus_um);
 
 % scramble_segments expects tolerances in rads
-segments = scramble_segments(segments,'piston_std', piston_std, 'tilt_std_x', tilt_std, 'tilt_std_y', tilt_std,'defocus_std', defocus_std,'seed', 1);
+segments = scramble_segments(segments,'piston_std', piston_std, 'tilt_std_x', tilt_std, 'tilt_std_y', tilt_std,'defocus_std', defocus_std,'seed', 4);
 
 [phi37_scrambled, mask37_scrambled, ~] = render_selected_tiles(segments, [1:37]);
 mask37_scrambled_nans = double(mask37_scrambled);
@@ -114,14 +114,19 @@ Rpx = segments.meta.seg_flat_diam_px / sqrt(3);
 
 
 %% apply noise
-SNR_vec = 10.^[1:1:6];
 
-for ind_SNR = 1:numel(SNR_vec)
+peak_intensity_vec = 10.^[2:8];
+sim_to_e = peak_intensity_vec ./ max(I12(:)); % scaling factor to move from simulation counts to realistic electron count-per-pixel
 
-    I1_noisy = I1+I1/SNR_vec(ind_SNR).*randn(size(I1));
-    I2_noisy = I2+I2/SNR_vec(ind_SNR).*randn(size(I1));
-    I12_noisy = I12+I12/SNR_vec(ind_SNR).*randn(size(I1));
-    I12p_noisy = I12p+I12p/SNR_vec(ind_SNR).*randn(size(I1));
+
+for ind_peak_instenisty = numel(peak_intensity_vec):-1:1
+
+    this_sim_to_e = sim_to_e(ind_peak_instenisty);
+    
+    I1_noisy = add_jwst_noise(this_sim_to_e*I1, 1,'dark_rate_e',0,'read_noise_e', 0,'n_groups', 1,'bg_rate_e', 0);
+    I2_noisy = add_jwst_noise(this_sim_to_e*I2, 1,'dark_rate_e',0,'read_noise_e', 0,'n_groups', 1,'bg_rate_e', 0);
+    I12_noisy = add_jwst_noise(this_sim_to_e*I12, 1,'dark_rate_e',0,'read_noise_e', 0,'n_groups', 1,'bg_rate_e', 0);
+    I12p_noisy = add_jwst_noise(this_sim_to_e*I12p, 1,'dark_rate_e',0,'read_noise_e', 0,'n_groups', 1,'bg_rate_e', 0);
 
     % Build |A|, |B|, S on the *centered* grid, then unshift to DFT layout
     prep = dbh_prepare_from_four_centered(I1_noisy, I2_noisy, I12_noisy, I12p_noisy, dtilt1, dtilt2, fft_res, Rpx);
@@ -136,17 +141,17 @@ for ind_SNR = 1:numel(SNR_vec)
     magB = ifftshift(prep.magB);           % |B̂|
     S    = ifftshift(prep.S);              % Â·B̂*  (complex)
 
-    % figure;
-    % subplot(1,3,1);imagesc(log(prep.magA));title('log(magA)');axis image ij off;
-    % subplot(1,3,2);imagesc(log(prep.magB));title('log(magB)');axis image ij off;
-    % subplot(1,3,3);imagesc(log(abs((prep.S))));title('log(abs((S)))');axis image ij off;
+    figure;
+    subplot(1,3,1);imagesc(log(prep.magA));title('log(magA)');axis image ij off;
+    subplot(1,3,2);imagesc(log(prep.magB));title('log(magB)');axis image ij off;
+    subplot(1,3,3);imagesc(log(abs((prep.S))));title('log(abs((S)))');axis image ij off;
 
     % supports must be same size as magA/magB/S; center pad if needed
     suppA = center_padcrop(M1, size(magA), false);
     suppB = center_padcrop(M2, size(magA), false);
 
     % --- Build the linear system as operators (no huge explicit matrix) ---
-    sys = dbh_prepare_system(magA, magB, S, suppA, suppB, 'lambda', 1e-1);
+    sys = dbh_prepare_system(magA, magB, S, suppA, suppB, 'lambda', 1e-3);
 
     % Real-stacked wrapper for lsqr (adapts complex A/A' to lsqr's API)
     Afun = @(x,tf) Afun_lsqr(x, tf, sys.Amul, sys.ATmul, sys.n, sys.m);
@@ -160,7 +165,7 @@ for ind_SNR = 1:numel(SNR_vec)
 
     % --- Solve ---
     tic;
-    [xR,flag,relres,iter] = lsqr(Afun, bR, 1e-10, 1e3, [], [], x0);
+    [xR,flag,relres,iter] = lsqr(Afun, bR, 1e-10, 1e5, [], [], x0);
     solve_time = toc;
 
     % Back to complex unknown on overlap K (phasor of B in frequency domain)
@@ -198,18 +203,18 @@ for ind_SNR = 1:numel(SNR_vec)
     % differences & RMS (on their own masks)
     d1   = angle(exp(1i*(phi1r_0 - phi1_0))) .* M1;
     d2   = angle(exp(1i*(phi2r_0 - phi2_0))) .* M2;
-    rms1(ind_SNR) = sqrt(mean(d1(M1).^2,'omitnan'));
-    rms2(ind_SNR) = sqrt(mean(d2(M2).^2,'omitnan'));
-    fprintf('RMS phase error (tile 1): %.3g rad\n', rms1(ind_SNR));
-    fprintf('RMS phase error (tile 2): %.3g rad\n', rms2(ind_SNR));
+    rms1(ind_peak_instenisty) = sqrt(mean(d1(M1).^2,'omitnan'));
+    rms2(ind_peak_instenisty) = sqrt(mean(d2(M2).^2,'omitnan'));
+    fprintf('RMS phase error (tile 1): %.3g rad\n', rms1(ind_peak_instenisty));
+    fprintf('RMS phase error (tile 2): %.3g rad\n', rms2(ind_peak_instenisty));
 
     %% --- errors ---
-    max_rms = max(rms1(ind_SNR),rms2(ind_SNR));
-    piston_error_rms_m(ind_SNR) =  max_rms/sqrt(sum(M1(:))) / (2*pi) * (lambda)
-    tilt_error_rms_rads(ind_SNR) =  2*max_rms*(lambda)/(2*pi)/sqrt(sum(M1(:)))/(seg_px/cosd(30)/2)
-    defocus_error_rms_m(ind_SNR) = 4*sqrt(12)*(f0_m/(seg_flat_diam_m/2))^2*(max_rms*(lambda)/(2*pi))/sqrt(sum(M1(:)))
+    max_rms = max(rms1(ind_peak_instenisty),rms2(ind_peak_instenisty));
+    piston_error_rms_m(ind_peak_instenisty) =  max_rms/sqrt(sum(M1(:))) / (2*pi) * (lambda)
+    tilt_error_rms_rads(ind_peak_instenisty) =  2*max_rms*(lambda)/(2*pi)/sqrt(sum(M1(:)))/(seg_px/cosd(30)/2)
+    defocus_error_rms_m(ind_peak_instenisty) = 4*sqrt(12)*(f0_m/(seg_flat_diam_m/2))^2*(max_rms*(lambda)/(2*pi))/sqrt(sum(M1(:)))
 
-
+1
 end
 
 %% --- noise figure

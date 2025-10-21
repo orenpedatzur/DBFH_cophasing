@@ -10,7 +10,7 @@ parula_with_nan_white = [1 1 1; parula(256)];
 font_size = 16;
 
 %% Parameters
-img_res = 2^10;
+img_res = 2^11;
 seg_px  = 140;     % flat-to-flat pixels per hex TODO: why only 140 works?
 f0_m    = 120;     % focal length [m]
 fft_res = img_res;    % PSF FFT size
@@ -21,12 +21,17 @@ Rm = seg_flat_diam_m/sqrt(3);
 
 %% Build diffraction-limited commands (uses your make_segments)
 segments = make_segments(img_res, seg_px, f0_m);
+
 % figure;scatter( segments.tilt_x, segments.tilt_y,'filled');axis ij equal
 % [~, ~, U37] = render_selected_tiles(segments, [1:37]);
 % [~, I37]    = pupil_fft2(U37, fft_res);
 % 
 % fig_unstacked = figure;imagesc((I37));  axis image  ij ; colorbar; colormap gray;
 % title('scrambled and unstacked','Color','w');
+
+% figure;scatter( segments.tilt_x, segments.tilt_y,'filled');axis ij equal
+
+
 %% add nontrivial phases to the segments
 % pre-phasing tolerances:
 sigma_opd_nm = 200; % nm
@@ -44,28 +49,36 @@ segments = scramble_segments(segments, ...
 mask37_scrambled_nans = double(mask37_scrambled);
 mask37_scrambled_nans(mask37_scrambled_nans==0) = nan;
 
-figure; imagesc(phi37_scrambled.*mask37_scrambled_nans);  axis image ij off; colorbar; colormap(parula_with_nan_white);
-set(gca,'FontSize',font_size);
-exportgraphics(gcf,'figures\scrambled_phases.png');
+
+% figure; imagesc(phi37_scrambled.*mask37_scrambled_nans);  axis image ij off; colorbar; colormap(parula_with_nan_white);
+% set(gca,'FontSize',font_size);
+% exportgraphics(gcf,'figures\scrambled_phases.png');
 
 
 %% unstack segments
+
 unstack_ratio = 3.5e-5/16.4062 *f0_m*seg_px/img_res; % TODO: solve relationship between unstack_ratio and resolution & segment size
 segments = unstack_segment_tilts(segments,unstack_ratio);
 % figure;scatter( segments.tilt_x, segments.tilt_y,'filled');axis ij equal
 
-[~, ~, U37] = render_selected_tiles(segments, [1:37]);
+[phi37_unstacked, ~, U37] = render_selected_tiles(segments, [1:37]);
 [~, I37]    = pupil_fft2(U37, fft_res);
 
 % fig_unstacked = figure;imagesc((I37));  axis image  ij ; colorbar; colormap gray;
 % title('scrambled and unstacked','Color','w');
 % saveas(fig_unstacked,fullfile('figures','scrambled_and_unstacked'),'png');
 
-test_numbering(fft_res,seg_px);
-hold on;
-imagesc(I37, 'AlphaData', 0.5);axis equal ij;colormap gray;
-xlim([1 img_res]);
-ylim([1 img_res]);
+% test_numbering(fft_res,seg_px);
+% hold on;
+% imagesc(I37, 'AlphaData', 0.5);axis equal ij;colormap gray;
+% xlim([1 img_res]);
+% ylim([1 img_res]);
+
+nominal_unstacking_phase = phi37_unstacked-phi37_scrambled;
+
+figure;imagesc(mod(nominal_unstacking_phase,2*pi))
+
+
 
 %% ---- Capture 1: only tile 1 ----
 tile_1_ind = 3;
@@ -83,6 +96,8 @@ tile_2_ind = 8;
 [phi12, M12, U12] = render_selected_tiles(segments12, [tile_1_ind tile_2_ind]);
 [~, I12]     = pupil_fft2(U12, fft_res);
 
+phi_tilt_2 = mod((phi12-phi2).*M2,2*pi);
+
 %% ---- Capture 4: tiles 1 & 2 overlapped + piston pi/2 on tile 2 ----
 segments12p         = segments12;
 segments12p.pistons(tile_2_ind) = segments12p.pistons(tile_2_ind) + pi/2;
@@ -99,10 +114,14 @@ nexttile; imagesc(log(I1));  axis image ij off; colormap parula; colorbar; title
 nexttile; imagesc(log(I2));  axis image ij off; colormap parula; colorbar; title(['Tile ',num2str(tile_2_ind),' only']);set(gca,'FontSize',font_size);
 nexttile; imagesc(log(I12)); axis image ij off; colormap parula; colorbar; title(['Tiles ',num2str(tile_1_ind),'+',num2str(tile_2_ind),' overlapped (nominal)']);set(gca,'FontSize',font_size);
 nexttile; imagesc(log(I12p));axis image ij off; colormap parula; colorbar; title(['Tiles ',num2str(tile_1_ind),'+',num2str(tile_2_ind),' overlapped, piston \pi/2 on latter']);set(gca,'FontSize',font_size);
-nexttile; imagesc(M1);hold on;imagesc(hex_grid,'AlphaData',0.3);axis image ij off; colormap parula; colorbar; title(['CS tile ',num2str(tile_1_ind)]);set(gca,'FontSize',font_size);
-nexttile; imagesc(M2);hold on;imagesc(hex_grid,'AlphaData',0.3);axis image ij off; colormap parula; colorbar; title(['CS tile ',num2str(tile_2_ind)]);set(gca,'FontSize',font_size);
-exportgraphics(gcf,'figures\inputs_intensities_to_DBFH.png');
 
+ax5 = nexttile; imagesc(M1);hold on;imagesc(hex_grid,'AlphaData',0.3);axis image ij off; colormap parula; colorbar; title(['CS tile ',num2str(tile_1_ind)]);set(gca,'FontSize',font_size);
+ax6 = nexttile; imagesc(M2);hold on;imagesc(hex_grid,'AlphaData',0.3);axis image ij off; colormap parula; colorbar; title(['CS tile ',num2str(tile_2_ind)]);set(gca,'FontSize',font_size);
+
+linkaxes([ax5,ax6]);
+xlim(ax6,img_res/2+4*seg_px*[-1,1]);
+ylim(ax6,img_res/2+4*seg_px*[-1,1]);
+exportgraphics(gcf,'figures\inputs_intensities_to_DBFH_2048.png');
 
 %% prepare data for DBH (two-tile case)
 % After you generate the four captures (I1,I2,I12,I12p) and you KNOW the commanded tilts:
@@ -213,7 +232,13 @@ nan_mask_tile1(nan_mask_tile1==0) = nan;
 nan_mask_tile2 = double(M2);
 nan_mask_tile2(nan_mask_tile2==0) = nan;
 
-cl1 = [-pi pi];
+phi1_0_stacked = mod(phi1_0 - nan_mask_tile1.*nominal_unstacking_phase,2*pi);
+phi2_0_stacked = mod(phi2_0 - nan_mask_tile2.*nominal_unstacking_phase - phi_tilt_2,2*pi);
+
+phi1r_0_stacked = mod(phi1r_0 - nan_mask_tile1.*nominal_unstacking_phase,2*pi);
+phi2r_0_stacked = mod(phi2r_0 - nan_mask_tile2.*nominal_unstacking_phase - phi_tilt_2,2*pi);
+
+cl1 = [0 2*pi];
 cl2 = 5e-2*[-pi pi];
 
 font_size = 16;
@@ -222,20 +247,20 @@ font_size = 16;
 figure;
 tiledlayout(2,3, "TileSpacing", "compact", "Padding", "tight"); % Adjust TileSpacing and Padding
 
-ax1 = nexttile; imagesc(phi1_0.*nan_mask_tile1);  axis image ij off; clim(cl1); colorbar; colormap(parula_with_nan_white);
+ax1 = nexttile; imagesc(phi1_0_stacked.*nan_mask_tile1);  axis image ij off; clim(cl1); colorbar; colormap(parula_with_nan_white);
 title(['Tile  ',num2str(tile_1_ind),'  – original']);set(gca,'FontSize',font_size);
 
 
-ax2 = nexttile; imagesc(phi1r_0.*nan_mask_tile1); axis image ij off; clim(cl1); colorbar;
+ax2 = nexttile; imagesc(phi1r_0_stacked.*nan_mask_tile1); axis image ij off; clim(cl1); colorbar;
 title(['Tile ',num2str(tile_1_ind),' – recovered']);set(gca,'FontSize',font_size);
 
 ax3 = nexttile; imagesc(d1.*nan_mask_tile1);      axis image ij off;clim(cl2);colorbar;
 title(sprintf('Tile %d – diff (RMS=%.3g)',tile_1_ind,rms1));set(gca,'FontSize',font_size);
 
-ax4 = nexttile; imagesc(phi2_0.*nan_mask_tile2);  axis image ij off; clim(cl1); colorbar;
+ax4 = nexttile; imagesc(phi2_0_stacked.*nan_mask_tile2);  axis image ij off; clim(cl1); colorbar;
 title(['Tile  ',num2str(tile_2_ind),'  – original']);set(gca,'FontSize',font_size);
 
-ax5 = nexttile; imagesc(phi2r_0.*nan_mask_tile2); axis image ij off; clim(cl1); colorbar;
+ax5 = nexttile; imagesc(phi2r_0_stacked.*nan_mask_tile2); axis image ij off; clim(cl1); colorbar;
 title(['Tile  ',num2str(tile_2_ind),'  – recovered']);set(gca,'FontSize',font_size);
 
 ax6 = nexttile; imagesc(d2.*nan_mask_tile2);      axis image ij off; clim(cl2);colorbar;
