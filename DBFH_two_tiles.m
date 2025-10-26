@@ -14,7 +14,7 @@ img_res = 2^11;
 seg_px  = 140;     % flat-to-flat pixels per hex TODO: why only 140 works?
 f0_m    = 120;     % focal length [m]
 fft_res = img_res;    % PSF FFT size
-seg_flat_diam_m = 6; % mirror size [m]
+seg_flat_diam_m = 1 ; % mirror diameter = 6m which includes roughly 10 edges of hexagon => edge = 60cm => segment diameter 2*0.6*cosd(30) [m]
 lambda = 550e-9;
 k = 2*pi/lambda;
 Rm = seg_flat_diam_m/sqrt(3);
@@ -215,7 +215,7 @@ fprintf('RMS phase error (tile 2): %.3g rad\n', rms2);
 %% --- errors ---
 
 piston_error_rms_m =  max(rms1,rms2)/sqrt(sum(M1(:))) / (2*pi) * (lambda)
-tilt_error_rms_rads =  2*max(rms1,rms2)*(lambda)/(2*pi)/sqrt(sum(M1(:)))/(seg_px/cosd(30)/2) 
+tilt_error_rms_rads =  2*max(rms1,rms2)*(lambda)/(2*pi)/sqrt(sum(M1(:)))/(seg_flat_diam_m/2) 
 defocus_error_rms_m = 4*sqrt(12)*(f0_m/(seg_flat_diam_m/2))^2*(max(rms1,rms2)*(lambda)/(2*pi))/sqrt(sum(M1(:)))
 %% --- Figure ---
 
@@ -239,7 +239,7 @@ phi1r_0_stacked = mod(phi1r_0 - nan_mask_tile1.*nominal_unstacking_phase,2*pi);
 phi2r_0_stacked = mod(phi2r_0 - nan_mask_tile2.*nominal_unstacking_phase - phi_tilt_2,2*pi);
 
 cl1 = [0 2*pi];
-cl2 = 5e-2*[-pi pi];
+cl2 = 5e-1*[-pi pi];
 
 font_size = 16;
 
@@ -276,7 +276,7 @@ ylim(ax1,yc_tile1+0.8*seg_px*[-1,1]);
 xlim(ax6,xc_tile2+0.8*seg_px*[-1,1]);
 ylim(ax6,yc_tile2+0.8*seg_px*[-1,1]);
 
-exportgraphics(gcf,'figures\DBFH_tiles_3_8.png');
+% exportgraphics(gcf,'figures\DBFH_tiles_3_8.png');
 
 
 %% --- end scripts ---

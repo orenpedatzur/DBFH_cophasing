@@ -16,6 +16,7 @@ function noisy_e = add_jwst_noise(img_e, t_exp, opts)
         opts.read_noise_e (1,1) {mustBeNonnegative} = 12        % NIRCam default
         opts.n_groups (1,1) {mustBeInteger, mustBePositive} = 1
         opts.bg_rate_e (1,1) {mustBeNonnegative} = 0
+        opts.seed (1,1) = 1;
     end
 
     % expectation per pixel (electrons)
@@ -23,7 +24,8 @@ function noisy_e = add_jwst_noise(img_e, t_exp, opts)
 
     % Poisson shot noise
     % (Protect against extremely large values; cast to double afterwards)
-    noisy_poiss = double(poissrnd(mu));
+    rng(opts.seed);gpurng(opts.seed)
+    noisy_poiss = poissrnd(mu);
 
     % Effective read noise for UTR (simple 1/sqrt(N) rule of thumb)
     sigma_r_eff = opts.read_noise_e / sqrt(opts.n_groups);

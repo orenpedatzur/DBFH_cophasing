@@ -17,7 +17,7 @@ function segments = make_segments(img_res, seg_flat_diam_px, focal_length_m)
 
     %# ---- simulation constants (edit to your setup) ----
     lambda      = 550e-9;     % wavelength [m]
-    seg_flat_diam_m = 6; % mirror size [m]
+    seg_flat_diam_m = 1; % mirror size [m]
     pixel_pitch = seg_flat_diam_m/seg_flat_diam_px;      % pixel pitch [m/pixel]
 
     %# ---- hex geometry: flat-top layout ----
